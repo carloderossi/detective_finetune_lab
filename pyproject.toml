@@ -1,0 +1,21 @@
+[project]
+name = "detective-finetune-lab"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "Sherlock Holmes + Hercule Poirot fine-tuning lab using Unsloth and RL."
+authors = [{ name = "Carlo" }]
+
+dependencies = [
+    "unsloth",
+    "transformers",
+    "datasets",
+    "accelerate",
+    "peft",
+    "sentence-transformers",
+    "trl",
+    "matplotlib",
+    "numpy",
+    "scipy",
+    "requests>=2.32.3",
+    "tqdm>=4.66.4",
+]
