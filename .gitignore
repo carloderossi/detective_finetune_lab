@@ -1,3 +1,4 @@
 /.venv
 /process_detective_novels.py
 /uv.lock
+/scripts/preparation_data_scripts.zip
