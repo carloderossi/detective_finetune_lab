@@ -21,13 +21,16 @@ learning_rate = LOW_LR if USE_LOW_LR else BASE_LR
 # ----------------------------
 # Load model with Unsloth
 # ----------------------------
+print(f"Loading model {MODEL_NAME} with Unsloth...")
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name = MODEL_NAME,
     max_seq_length = MAX_LENGTH,
     load_in_4bit = True,
 )
 
+print(f"Model loaded. Vocabulary size: {tokenizer.vocab_size}")
 tokenizer.pad_token = tokenizer.eos_token
+print(f"Tokenizer pad token set to: {tokenizer.pad_token} (id={tokenizer.pad_token_id})")
 
 # ----------------------------
 # LoRA configuration
@@ -43,13 +46,24 @@ lora_config = LoraConfig(
     bias = "none",
     task_type = "CAUSAL_LM",
 )
+print(f"Applying LoRA with config: r={lora_config.r}, alpha={lora_config.lora_alpha}, dropout={lora_config.lora_dropout}")
 
+print("Applying LoRA to model...")
 model = FastLanguageModel.get_peft_model(model, lora_config)
+print("LoRA applied. Trainable parameters:")
+for name, param in model.named_parameters():
+    if param.requires_grad:
+        print(f"  {name}: {param.shape} ({param.numel()} params)")
+    else:
+        print(f"  {name}: {param.shape} (frozen)")
+                 
 
 # ----------------------------
 # Load dataset
 # ----------------------------
+print(f"Loading dataset from {DATA_FILE}...")
 dataset = load_dataset("json", data_files={"train": DATA_FILE})
+print(f"Dataset loaded. Number of training examples: {len(dataset['train'])}")
 
 def extract_text(example):
     if "text" in example:
@@ -61,6 +75,8 @@ def extract_text(example):
     raise ValueError("No usable text field found.")
 
 dataset = dataset.map(lambda x: {"text": extract_text(x)})
+print("Extracted text from dataset. Sample:")
+print(dataset["train"][0]["text"][:500])
 
 def tokenize(batch):
     return tokenizer(
@@ -69,7 +85,10 @@ def tokenize(batch):
         max_length=MAX_LENGTH,
     )
 
+print("Tokenizing dataset...")
 tokenized = dataset.map(tokenize, batched=True, remove_columns=["text"])
+print("Dataset tokenized. Sample:")
+print(tokenized["train"][0]["input_ids"][:50])
 
 # ----------------------------
 # Training arguments
@@ -89,12 +108,16 @@ training_args = TrainingArguments(
     optim="paged_adamw_8bit",
     report_to="none",
 )
+print(f"Training arguments set: batch_size={training_args.per_device_train_batch_size}, "
+      f"grad_accum={training_args.gradient_accumulation_steps}, "   
+      f"learning_rate={training_args.learning_rate}, max_steps={training_args.max_steps}")    
 
 data_collator = DataCollatorForLanguageModeling(
     tokenizer=tokenizer,
     mlm=False,
 )
 
+print("Starting training...")
 trainer = Trainer(
     model=model,
     args=training_args,
@@ -102,6 +125,11 @@ trainer = Trainer(
     data_collator=data_collator,
 )
 
+print("Trainer initialized. Beginning training loop...")
 trainer.train()
+
+print("Training completed. Saving model and tokenizer...")
 model.save_pretrained("./detective-scout-unsloth")
 tokenizer.save_pretrained("./detective-scout-unsloth")
+
+print("Model and tokenizer saved to ./detective-scout-unsloth")
