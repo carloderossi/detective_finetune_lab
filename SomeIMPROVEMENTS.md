@@ -8,7 +8,6 @@
 Your detective fine-tuning lab is well-structured with solid foundations. Below are **prioritized improvements** across security, code quality, features, and production readiness.
 
 **Priority Levels:**
-- 🔴 **CRITICAL**: Security/data loss risks - fix immediately
 - 🟠 **HIGH**: Significantly improves project quality
 - 🟡 **MEDIUM**: Nice-to-have enhancements
 - 🟢 **LOW**: Future considerations
@@ -17,75 +16,7 @@ Your detective fine-tuning lab is well-structured with solid foundations. Below 
 
 ## 🔴 CRITICAL PRIORITIES
 
-### 1. Security: HuggingFace Token Exposure
-
-**Issue**: Your `config.yaml` contains a plaintext HuggingFace token that should NEVER be committed to git.
-
-**Current State**:
-```yaml
-huggingface:
-  token: "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"  # ⚠️ EXPOSED!
-```
-
-**Immediate Actions**:
-
-1. **Revoke the exposed token** at https://huggingface.co/settings/tokens
-2. **Generate a new token** and store securely
-3. **Remove from git history**:
-   ```bash
-   # Install BFG Repo-Cleaner
-   git filter-repo --path config.yaml --invert-paths
-   git push --force
-   ```
-
-**Recommended Solution**:
-```python
-# config_loader.py
-import os
-from pathlib import Path
-import yaml
-
-def load_config():
-    """Load config with environment variable fallback."""
-    config_path = Path("config.yaml")
-    
-    if config_path.exists():
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-    else:
-        config = {}
-    
-    # Override with environment variables (more secure)
-    config.setdefault("huggingface", {})
-    config["huggingface"]["token"] = os.getenv(
-        "HF_TOKEN",
-        config.get("huggingface", {}).get("token")
-    )
-    
-    return config
-```
-
-**Usage**:
-```bash
-# .env file (add to .gitignore!)
-HF_TOKEN=your_new_token_here
-
-# Or set as environment variable
-export HF_TOKEN="your_token_here"
-```
-
-**Update `.gitignore`**:
-```gitignore
-# Already has config.yaml, but ensure:
-config.yaml
-.env
-*.env
-secrets/
-```
-
----
-
-### 2. Missing Error Handling in Training Scripts
+### Missing Error Handling in Training Scripts
 
 **Issue**: Training scripts lack robust error handling, risking data loss on crashes.
 
@@ -152,7 +83,7 @@ if __name__ == "__main__":
 
 ---
 
-### 3. No Backup Strategy for Models/Data
+### No Backup Strategy for Models/Data
 
 **Issue**: No automated backups for trained models or datasets.
 
@@ -221,7 +152,7 @@ backup_mgr.backup_model(
 
 ## 🟠 HIGH PRIORITY
 
-### 4. Add Comprehensive Logging
+### Add Comprehensive Logging
 
 **Current Issue**: Limited visibility into training progress and debugging.
 
@@ -277,7 +208,7 @@ logger.error("Training failed!", exc_info=True)
 
 ---
 
-### 5. Implement Experiment Tracking
+### Implement Experiment Tracking
 
 **Recommended**: Use Weights & Biases or MLflow for experiment tracking.
 
@@ -333,7 +264,7 @@ with mlflow.start_run(run_name="holmes-poirot-v1"):
 
 ---
 
-### 6. Add Unit Tests
+### Add Unit Tests
 
 **Current Issue**: No automated testing for dataset processing or utilities.
 
@@ -402,7 +333,7 @@ def test_token_length_distribution():
 
 ---
 
-### 7. Create Environment Setup Script
+### Create Environment Setup Script
 
 **Recommended**: One-command setup for new contributors.
 
@@ -489,7 +420,7 @@ chmod +x setup.sh
 
 ## 🟡 MEDIUM PRIORITY
 
-### 8. Add Data Versioning (DVC)
+### Add Data Versioning (DVC)
 
 **Purpose**: Track dataset changes and experiment reproducibility.
 
@@ -517,7 +448,7 @@ dvc push  # Upload to remote storage
 
 ---
 
-### 9. Implement Hyperparameter Tuning
+### Implement Hyperparameter Tuning
 
 **Current**: Hardcoded hyperparameters in scripts.
 
@@ -555,333 +486,3 @@ print("Best loss:", study.best_value)
 
 ---
 
-### 10. Add Model Serving Endpoint
-
-**Purpose**: Easy inference via API.
-
-```python
-# serve.py
-from fastapi import FastAPI
-from pydantic import BaseModel
-from unsloth import FastLanguageModel
-
-app = FastAPI(title="Detective AI API")
-
-# Load model at startup
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name="./detective-qwen-sft",
-    max_seq_length=4096,
-    load_in_4bit=True
-)
-
-class GenerationRequest(BaseModel):
-    prompt: str
-    max_new_tokens: int = 512
-    temperature: float = 0.7
-    style: str = "holmes"  # or "poirot"
-
-@app.post("/generate")
-async def generate(request: GenerationRequest):
-    """Generate detective fiction."""
-    
-    # Style-specific system prompts
-    system_prompts = {
-        "holmes": "You are Sherlock Holmes. Respond with logical deduction.",
-        "poirot": "You are Hercule Poirot. Use psychology and method."
-    }
-    
-    full_prompt = f"{system_prompts[request.style]}\n\n{request.prompt}"
-    
-    inputs = tokenizer(full_prompt, return_tensors="pt").to(model.device)
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=request.max_new_tokens,
-        temperature=request.temperature
-    )
-    
-    generated = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    
-    return {"generated_text": generated}
-
-# Run with: uvicorn serve:app --reload
-```
-
-**Test the API**:
-```bash
-curl -X POST http://localhost:8000/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Examine the crime scene and deduce the killer",
-    "style": "holmes",
-    "temperature": 0.8
-  }'
-```
-
----
-
-### 11. Create Pre-commit Hooks
-
-**Purpose**: Enforce code quality automatically.
-
-```bash
-# Install pre-commit
-pip install pre-commit
-
-# .pre-commit-config.yaml
-repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-json
-      - id: check-added-large-files
-        args: ['--maxkb=5000']
-  
-  - repo: https://github.com/psf/black
-    rev: 23.12.1
-    hooks:
-      - id: black
-        language_version: python3.12
-  
-  - repo: https://github.com/PyCQA/flake8
-    rev: 7.0.0
-    hooks:
-      - id: flake8
-        args: ['--max-line-length=100']
-  
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        args: ['--profile', 'black']
-
-# Install hooks
-pre-commit install
-```
-
----
-
-### 12. Add Gradio Demo UI
-
-**Purpose**: Interactive web UI for non-technical users.
-
-```python
-# demo.py
-import gradio as gr
-from unsloth import FastLanguageModel
-
-# Load model
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name="./detective-qwen-sft",
-    max_seq_length=4096,
-    load_in_4bit=True
-)
-
-def generate_detective_text(prompt, style, temperature, max_tokens):
-    """Generate text based on detective style."""
-    system_prompt = {
-        "Sherlock Holmes": "You are Sherlock Holmes using logical deduction.",
-        "Hercule Poirot": "You are Hercule Poirot using psychology and method.",
-        "Crossover": "You are both Holmes and Poirot collaborating."
-    }[style]
-    
-    full_prompt = f"{system_prompt}\n\n{prompt}"
-    inputs = tokenizer(full_prompt, return_tensors="pt").to(model.device)
-    
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=max_tokens,
-        temperature=temperature,
-        do_sample=True
-    )
-    
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-# Create UI
-demo = gr.Interface(
-    fn=generate_detective_text,
-    inputs=[
-        gr.Textbox(label="Mystery Prompt", lines=5, placeholder="Describe the crime scene..."),
-        gr.Radio(["Sherlock Holmes", "Hercule Poirot", "Crossover"], label="Detective Style"),
-        gr.Slider(0.1, 1.5, value=0.7, label="Temperature"),
-        gr.Slider(128, 1024, value=512, step=128, label="Max Tokens")
-    ],
-    outputs=gr.Textbox(label="Generated Text", lines=15),
-    title="🔍 Detective Fiction AI Generator",
-    description="Generate detective fiction in the style of Holmes or Poirot!",
-    examples=[
-        ["The body was found in the library at midnight...", "Sherlock Holmes", 0.7, 512],
-        ["The victim had three unusual clues...", "Hercule Poirot", 0.8, 512]
-    ]
-)
-
-if __name__ == "__main__":
-    demo.launch(share=True)  # Creates public link
-```
-
----
-
-## 🟢 LOW PRIORITY / FUTURE ENHANCEMENTS
-
-### 13. Multi-GPU Training Support
-
-```python
-# Distributed training with Accelerate
-from accelerate import Accelerator
-
-accelerator = Accelerator()
-model, optimizer, train_dataloader = accelerator.prepare(
-    model, optimizer, train_dataloader
-)
-
-# Training loop automatically handles multi-GPU
-for batch in train_dataloader:
-    outputs = model(**batch)
-    loss = outputs.loss
-    accelerator.backward(loss)
-    optimizer.step()
-```
-
-### 14. Continuous Integration (CI/CD)
-
-```yaml
-# .github/workflows/ci.yml
-name: CI
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      
-      - name: Install dependencies
-        run: |
-          pip install uv
-          uv pip install -e .[dev]
-      
-      - name: Run tests
-        run: pytest tests/
-      
-      - name: Check code quality
-        run: |
-          black --check .
-          flake8 .
-```
-
-### 15. Docker Containerization
-
-```dockerfile
-# Dockerfile
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
-
-WORKDIR /app
-
-# Install Python
-RUN apt-get update && apt-get install -y python3.12 python3-pip
-
-# Install uv
-RUN pip install uv
-
-# Copy project
-COPY . /app
-
-# Install dependencies
-RUN uv pip install -e .
-
-# Expose API port
-EXPOSE 8000
-
-CMD ["python", "serve.py"]
-```
-
----
-
-## 📊 Code Quality Metrics Dashboard
-
-Create a simple dashboard to track code health:
-
-```python
-# reports/code_metrics.py
-import subprocess
-from pathlib import Path
-
-def count_lines_of_code():
-    """Count lines in Python files."""
-    total = 0
-    for py_file in Path("scripts").glob("*.py"):
-        with open(py_file) as f:
-            total += len(f.readlines())
-    return total
-
-def count_tests():
-    """Count test cases."""
-    test_count = 0
-    for test_file in Path("tests").glob("test_*.py"):
-        with open(test_file) as f:
-            test_count += f.read().count("def test_")
-    return test_count
-
-def check_coverage():
-    """Run pytest with coverage."""
-    result = subprocess.run(
-        ["pytest", "--cov=scripts", "--cov-report=term-missing"],
-        capture_output=True
-    )
-    return result.stdout.decode()
-
-print("📊 Code Metrics Dashboard")
-print("=" * 50)
-print(f"Lines of Code: {count_lines_of_code()}")
-print(f"Test Count: {count_tests()}")
-print("\nCoverage Report:")
-print(check_coverage())
-```
-
----
-
-## 🎯 Implementation Roadmap
-
-### Week 1: Critical Fixes
-- [ ] Revoke exposed HuggingFace token
-- [ ] Implement environment variable config loading
-- [ ] Add error handling to training scripts
-- [ ] Setup backup system
-
-### Week 2: Quality Improvements
-- [ ] Add comprehensive logging
-- [ ] Implement experiment tracking (W&B or MLflow)
-- [ ] Write unit tests for dataset processing
-- [ ] Create setup.sh script
-
-### Week 3: Features
-- [ ] Add hyperparameter tuning with Optuna
-- [ ] Create model serving API
-- [ ] Build Gradio demo UI
-- [ ] Setup pre-commit hooks
-
-### Month 2+: Advanced Features
-- [ ] Implement DVC for data versioning
-- [ ] Add multi-GPU support
-- [ ] Create Docker container
-- [ ] Setup CI/CD pipeline
-
----
-
-## 📝 Final Recommendations
-
-1. **Start with security**: Fix the token exposure immediately
-2. **Add tests incrementally**: Test critical paths first (dataset loading, generation)
-3. **Document as you go**: Update README with new features
-4. **Version your models**: Use semantic versioning (v1.0.0, v1.1.0, etc.)
-5. **Get feedback early**: Share the Gradio demo with users for qualitative feedback
-
----
-
-**Questions or need help implementing any of these? Feel free to ask!** 🚀

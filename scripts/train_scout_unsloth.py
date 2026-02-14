@@ -14,8 +14,10 @@ MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 DATA_FILE = "data/train/detective_finetune.jsonl"
 
 MAX_LENGTH = 4096
-GRAD_ACCUM = 24
-MAX_STEPS = 2200
+# Updated for a small dataset of 205 examples
+MAX_STEPS = 100      # This will take ~2-3 hours instead of 2 days
+GRAD_ACCUM = 8       # More updates for a small dataset
+NUM_EPOCHS = 3           # Pass through the data 3 times
 BASE_LR = 1.5e-4
 LOW_LR = 8e-5
 USE_LOW_LR = False
@@ -127,18 +129,42 @@ training_args = TrainingArguments(
     per_device_train_batch_size=1,
     gradient_accumulation_steps=GRAD_ACCUM,
     learning_rate=learning_rate,
-    max_steps=MAX_STEPS,
+    
+    # --- EPOCH-BASED SETTINGS ---
+    num_train_epochs=NUM_EPOCHS,      # Use this instead of max_steps
+    eval_strategy="epoch",            # Evaluate at the end of every epoch
+    save_strategy="epoch",            # Save a checkpoint at the end of every epoch
+    # ----------------------------
+
     warmup_ratio=0.05,
     lr_scheduler_type="cosine",
-    logging_steps=25,
-    evaluation_strategy="steps", # new unlsloth-specific option for more efficient eval scheduling
-    eval_steps=250,
-    save_steps=250,
-    save_total_limit=4,
+    logging_steps=5,                  # Log more frequently since total steps are low
+    save_total_limit=2,
     fp16=True,
     optim="paged_adamw_8bit",
     report_to="none",
+    weight_decay=0.01,
 )
+
+# training_args = TrainingArguments(
+#     output_dir="./detective-qwen-sft",
+#     per_device_train_batch_size=1,
+#     gradient_accumulation_steps=GRAD_ACCUM,
+#     learning_rate=learning_rate,
+#     max_steps=MAX_STEPS,
+#     warmup_ratio=0.05,
+#     lr_scheduler_type="cosine",
+#     logging_steps=25,
+#     eval_strategy="steps", # Use this! Delete 'evaluation_strategy' if it's there
+#     eval_steps=20,
+#     save_steps=20,
+#     #save_total_limit=4,
+#     fp16=True,
+#     optim="paged_adamw_8bit", # Crucial for fitting the 7B model on a 16GB T4.
+#     report_to="none",
+#     weight_decay=0.01, # Adding a small weight decay helps prevent the model from "forgetting" its base knowledge during long runs
+#     save_total_limit=2 # During a long run, generating checkpoints every 250 steps will quickly fill up your disk. Limit this to the last 2 best checkpoints
+# )
 
 data_collator = DataCollatorForLanguageModeling(
     tokenizer=tokenizer,
