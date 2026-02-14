@@ -138,8 +138,16 @@ training_args = TrainingArguments(
 
     warmup_ratio=0.05,
     lr_scheduler_type="cosine",
+<<<<<<< HEAD
     logging_steps=5,                  # Log more frequently since total steps are low
     save_total_limit=2,
+=======
+    logging_steps=25,
+    eval_strategy="steps", # Use this! Delete 'evaluation_strategy' if it's there
+    eval_steps=250,
+    save_steps=250,
+    save_total_limit=4,
+>>>>>>> 4a9fc6a895acac76e5668101cbd33b8851214e38
     fp16=True,
     optim="paged_adamw_8bit",
     report_to="none",
