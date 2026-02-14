@@ -103,8 +103,21 @@ def group_texts(examples):
     }
 
 print("Packing sequences...")
-train_tok = train_tok.map(group_texts, batched=True)
-eval_tok  = eval_tok.map(group_texts,  batched=True)
+# HuggingFace  expects each column returned by  to have the same number of rows as the input batch. 
+# Since we are concatenating and re-splitting, we set batch_size=None to process the entire dataset at once, and remove the original columns.
+train_tok = train_tok.map(
+    group_texts,
+    batched=True,
+    batch_size=None,
+    remove_columns=train_tok.column_names,
+)
+
+eval_tok = eval_tok.map(
+    group_texts,
+    batched=True,
+    batch_size=None,
+    remove_columns=eval_tok.column_names,
+)
 
 print(f"Packed train samples: {len(train_tok)}")
 print(f"Packed eval samples:  {len(eval_tok)}")
