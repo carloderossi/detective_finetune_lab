@@ -9,7 +9,7 @@ from peft import LoraConfig
 import numpy as np
 
 MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
-#MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
+# MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
 
 DATA_FILE = "data/train/detective_finetune.jsonl"
 
@@ -33,8 +33,8 @@ tokenizer.pad_token = tokenizer.eos_token
 print(f"Pad token set to: {tokenizer.pad_token} (id={tokenizer.pad_token_id})")
 
 lora_config = LoraConfig(
-    r = 32,
-    lora_alpha = 64,
+    r=int(32),
+    lora_alpha=int(64),
     lora_dropout = 0.05,
     target_modules = [
         "q_proj", "k_proj", "v_proj", "o_proj",
