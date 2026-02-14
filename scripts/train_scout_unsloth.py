@@ -32,20 +32,20 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 tokenizer.pad_token = tokenizer.eos_token
 print(f"Pad token set to: {tokenizer.pad_token} (id={tokenizer.pad_token_id})")
 
-lora_config = LoraConfig(
-    r=int(32),
-    lora_alpha=int(64),
-    lora_dropout = 0.05,
-    target_modules = [
+print("Creating PEFT model using Unsloth’s built‑in LoRA config helper...")
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=32,
+    lora_alpha=64,
+    lora_dropout=0.05,
+    target_modules=[
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
     ],
-    bias = "none",
-    task_type = "CAUSAL_LM",
+    bias="none",
+    task_type="CAUSAL_LM",
 )
-
-print("Applying LoRA...")
-model = FastLanguageModel.get_peft_model(model, lora_config)
+print("PEFT model created with LoRA adapters.")
 
 print(f"Loading dataset from {DATA_FILE}...")
 raw_dataset = load_dataset("json", data_files={"train": DATA_FILE})["train"]
