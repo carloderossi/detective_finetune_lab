@@ -78,23 +78,29 @@ print("Tokenizing...")
 train_tok = train_ds.map(tokenize, batched=True, remove_columns=["text"])
 eval_tok  = eval_ds.map(tokenize,  batched=True, remove_columns=["text"])
 
-# --- sequence packing: concatenate then chunk into MAX_LENGTH ---
+# --- sequence packing: HuggingFace expects each batch to return a flat list of samples, not a nested structure.
+# we concatenate all tokenized sequences and then split into chunks of MAX_LENGTH, creating new samples on the fly.
 def group_texts(examples):
-    # concatenate
+    # Concatenate all tokens
     concatenated = sum(examples["input_ids"], [])
     total_length = (len(concatenated) // MAX_LENGTH) * MAX_LENGTH
-    concatenated = concatenated[:total_length]
-    # chunk
-    result = {
-        "input_ids": [
-            concatenated[i : i + MAX_LENGTH]
-            for i in range(0, total_length, MAX_LENGTH)
-        ]
-    }
-    result["attention_mask"] = [
-        [1] * MAX_LENGTH for _ in range(len(result["input_ids"]))
+
+    if total_length == 0:
+        return {"input_ids": [], "attention_mask": []}
+
+    input_ids = [
+        concatenated[i : i + MAX_LENGTH]
+        for i in range(0, total_length, MAX_LENGTH)
     ]
-    return result
+
+    attention_mask = [
+        [1] * MAX_LENGTH for _ in range(len(input_ids))
+    ]
+
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+    }
 
 print("Packing sequences...")
 train_tok = train_tok.map(group_texts, batched=True)
