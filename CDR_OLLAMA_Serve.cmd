@@ -57,6 +57,6 @@ start "" ollama serve
 REM ================================
 REM Run OLLAMA model
 REM ================================
-ollama run qwen2.5:7b-instruct "hello"
+ollama run mistral-nemo:12b "hello"
 :: use qwen2.5:3b-instruct for testing
 :: ollama run qwen2.5:3b-instruct "hello"
