@@ -43,7 +43,7 @@ model = FastLanguageModel.get_peft_model(
         "gate_proj", "up_proj", "down_proj",
     ],
     bias="none",
-    task_type="CAUSAL_LM",
+    # task_type="CAUSAL_LM",
 )
 print("PEFT model created with LoRA adapters.")
 
