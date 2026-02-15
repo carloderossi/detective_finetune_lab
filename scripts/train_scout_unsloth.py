@@ -39,7 +39,7 @@ model = FastLanguageModel.get_peft_model(
     model,
     r=32,
     lora_alpha=64,
-    lora_dropout=0.05,
+    lora_dropout=0.05, # Unsloth falls back to slower kernels for LoRA layers. Adding dropout can help regularize and improve generalization when training for many steps on a small dataset.
     target_modules=[
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
@@ -126,25 +126,60 @@ print(f"Packed eval samples:  {len(eval_tok)}")
 
 training_args = TrainingArguments(
     output_dir="./detective-qwen-sft",
-    per_device_train_batch_size=1,
-    gradient_accumulation_steps=GRAD_ACCUM,
-    learning_rate=learning_rate,
-    
-    # --- EPOCH-BASED SETTINGS ---
-    num_train_epochs=NUM_EPOCHS,      # Use this instead of max_steps
-    eval_strategy="epoch",            # Evaluate at the end of every epoch
-    save_strategy="epoch",            # Save a checkpoint at the end of every epoch
-    # ----------------------------
 
+    # --- CORE TRAINING QUALITY ---
+    per_device_train_batch_size=1,          # must stay 1 for 14B on 15GB
+    gradient_accumulation_steps=GRAD_ACCUM, # effective batch = 8
+    gradient_checkpointing=True,            # CRITICAL for quality + memory
+    max_steps=MAX_STEPS,                    # ensures stable runtime
+    num_train_epochs=NUM_EPOCHS,            # 3 passes over 205 examples
+
+    # --- LEARNING RATE SCHEDULE ---
+    learning_rate=BASE_LR if not USE_LOW_LR else LOW_LR,
     warmup_ratio=0.05,
     lr_scheduler_type="cosine",
-    logging_steps=5,                  # Log more frequently since total steps are low
-    save_total_limit=2,
-    fp16=True,
-    optim="paged_adamw_8bit",
-    report_to="none",
     weight_decay=0.01,
+
+    # --- EVALUATION (LIGHTWEIGHT BUT HIGH-QUALITY) ---
+    eval_strategy="epoch",                  # evaluate once per epoch
+    per_device_eval_batch_size=1,           # prevents OOM
+    fp16=True,
+    fp16_full_eval=True,                    # reduces eval memory
+    predict_with_generate=False,            # avoids massive memory spikes
+
+    # --- SAVING ---
+    save_strategy="epoch",
+    save_total_limit=2,
+
+    # --- LOGGING ---
+    logging_steps=5,
+    report_to="none",
+
+    # --- MEMORY & OPTIMIZER ---
+    optim="paged_adamw_8bit",               # best for Colab + 14B
 )
+
+# training_args = TrainingArguments(
+#     output_dir="./detective-qwen-sft",
+#     per_device_train_batch_size=1,
+#     gradient_accumulation_steps=GRAD_ACCUM,
+#     learning_rate=learning_rate,
+    
+#     # --- EPOCH-BASED SETTINGS ---
+#     num_train_epochs=NUM_EPOCHS,      # Use this instead of max_steps
+#     eval_strategy="epoch",            # Evaluate at the end of every epoch
+#     save_strategy="epoch",            # Save a checkpoint at the end of every epoch
+#     # ----------------------------
+
+#     warmup_ratio=0.05,
+#     lr_scheduler_type="cosine",
+#     logging_steps=5,                  # Log more frequently since total steps are low
+#     save_total_limit=2,
+#     fp16=True,
+#     optim="paged_adamw_8bit",
+#     report_to="none",
+#     weight_decay=0.01,
+# )
 
 # training_args = TrainingArguments(
 #     output_dir="./detective-qwen-sft",
