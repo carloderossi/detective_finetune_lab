@@ -30,6 +30,7 @@ model, tokenizer = FastLanguageModel.from_pretrained(
     max_seq_length = MAX_LENGTH,
     load_in_4bit = True,
 )
+model.gradient_checkpointing_enable()
 
 tokenizer.pad_token = tokenizer.eos_token
 print(f"Pad token set to: {tokenizer.pad_token} (id={tokenizer.pad_token_id})")
@@ -127,25 +128,25 @@ print(f"Packed eval samples:  {len(eval_tok)}")
 training_args = TrainingArguments(
     output_dir="./detective-qwen-sft",
 
-    # --- CORE TRAINING QUALITY ---
-    per_device_train_batch_size=1,          # must stay 1 for 14B on 15GB
-    gradient_accumulation_steps=GRAD_ACCUM, # effective batch = 8
-    gradient_checkpointing=True,            # CRITICAL for quality + memory
-    max_steps=MAX_STEPS,                    # ensures stable runtime
-    num_train_epochs=NUM_EPOCHS,            # 3 passes over 205 examples
+    # --- BATCHING & GRADIENT QUALITY ---
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=GRAD_ACCUM,   # 8
+    max_steps=MAX_STEPS,                      # 100
+    num_train_epochs=NUM_EPOCHS,              # 3
 
-    # --- LEARNING RATE SCHEDULE ---
+    # --- LEARNING ---
     learning_rate=BASE_LR if not USE_LOW_LR else LOW_LR,
     warmup_ratio=0.05,
     lr_scheduler_type="cosine",
     weight_decay=0.01,
 
-    # --- EVALUATION (LIGHTWEIGHT BUT HIGH-QUALITY) ---
-    eval_strategy="epoch",                  # evaluate once per epoch
-    per_device_eval_batch_size=1,           # prevents OOM
-    fp16=True,
-    fp16_full_eval=True,                    # reduces eval memory
-    predict_with_generate=False,            # avoids massive memory spikes
+    # --- EVALUATION (LIGHTWEIGHT & SAFE) ---
+    eval_strategy="epoch",                    # evaluate once per epoch
+    per_device_eval_batch_size=1,             # prevents OOM
+
+    # --- PRECISION ---
+    fp16=True,                                # your version supports this
+    bf16=False,                               # ensure disabled on Colab T4
 
     # --- SAVING ---
     save_strategy="epoch",
@@ -155,8 +156,8 @@ training_args = TrainingArguments(
     logging_steps=5,
     report_to="none",
 
-    # --- MEMORY & OPTIMIZER ---
-    optim="paged_adamw_8bit",               # best for Colab + 14B
+    # --- OPTIMIZER ---
+    optim="paged_adamw_8bit",
 )
 
 # training_args = TrainingArguments(
