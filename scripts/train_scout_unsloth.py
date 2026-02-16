@@ -22,6 +22,8 @@ BASE_LR = 1.5e-4
 LOW_LR = 8e-5
 USE_LOW_LR = False
 
+LORA_DROPOUT = 0 # 0.05 or 0.1 can help regularize when training for many steps on a small dataset, but it also slows down Unsloth (non-deterministic). 
+
 learning_rate = LOW_LR if USE_LOW_LR else BASE_LR
 
 print(f"Loading model {MODEL_NAME} with Unsloth...")
@@ -36,11 +38,12 @@ tokenizer.pad_token = tokenizer.eos_token
 print(f"Pad token set to: {tokenizer.pad_token} (id={tokenizer.pad_token_id})")
 
 print("Creating PEFT model using Unsloth’s built‑in LoRA config helper...")
+
 model = FastLanguageModel.get_peft_model(
     model,
     r=32,
     lora_alpha=64,
-    lora_dropout=0.05, # Unsloth falls back to slower kernels for LoRA layers. Adding dropout can help regularize and improve generalization when training for many steps on a small dataset.
+    lora_dropout=LORA_DROPOUT, # Unsloth falls back to slower kernels for LoRA layers. Adding dropout can help regularize and improve generalization when training for many steps on a small dataset.
     target_modules=[
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
