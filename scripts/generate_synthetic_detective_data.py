@@ -25,6 +25,9 @@ from typing import List, Dict
 from transformers import pipeline, AutoTokenizer
 import torch
 
+import yaml
+from huggingface_hub import login
+
 # ──────────────────────────────────────────────────────────────────────────────
 #  CONFIGURATION
 # ──────────────────────────────────────────────────────────────────────────────
@@ -232,14 +235,31 @@ def main():
 
     print(f"\nDone! Generated {len(all_examples)} examples → {OUTPUT_FILE}")
 
+def load_hf_token():
+    config_path = "config.yaml"
+
+    # 1. Check if config.yaml exists
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            cfg = yaml.safe_load(f)
+        token = cfg.get("huggingface", {}).get("token")
+        if token:
+            return token
+        else:
+            raise ValueError("config.yaml found but token missing under huggingface.token")
+
+    # 2. Fallback to environment variable
+    token = os.getenv("HF_TOKEN")
+    if token:
+        return token
+
+    # 3. Neither found → fail clearly
+    raise EnvironmentError(
+        "No Hugging Face token found. Provide config.yaml or set HF_TOKEN env var."
+    )
 
 if __name__ == "__main__":
-    import yaml
-    from huggingface_hub import login
-
-    with open("config.yaml", "r") as f:
-        cfg = yaml.safe_load(f)
-
-    hf_token = cfg["huggingface"]["token"]
+    hf_token = load_hf_token()
     login(token=hf_token)
+
     main()
