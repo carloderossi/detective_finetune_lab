@@ -238,7 +238,7 @@ def main():
 def load_hf_token():
     config_path = "config.yaml"
 
-    # 1. Check if config.yaml exists
+    """ # 1. Check if config.yaml exists
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
             cfg = yaml.safe_load(f)
@@ -246,7 +246,7 @@ def load_hf_token():
         if token:
             return token
         else:
-            raise ValueError("config.yaml found but token missing under huggingface.token")
+            raise ValueError("config.yaml found but token missing under huggingface.token") """
 
     # 2. Check environment variable
     token = os.getenv("HF_TOKEN")
