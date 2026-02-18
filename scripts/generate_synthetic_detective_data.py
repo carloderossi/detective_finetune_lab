@@ -248,10 +248,16 @@ def load_hf_token():
         else:
             raise ValueError("config.yaml found but token missing under huggingface.token")
 
-    # 2. Fallback to colab secrets
+    # 2. Check environment variable
+    token = os.getenv("HF_TOKEN")
+    if token:
+        return token
+    
+    # 3. Fallback to colab secrets
     from google.colab import userdata
     token = userdata.get("HF_TOKEN")
     if token:
+        os.environ["HF_TOKEN"] = token
         return token
 
     # 3. Neither found → fail clearly
