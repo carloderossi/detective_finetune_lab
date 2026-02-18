@@ -228,10 +228,17 @@ def main():
                 print(f"  → Added example {len(all_examples)} ({len(example['output'])} chars)")
 
     # Save
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        for ex in all_examples:
-            f.write(json.dumps(ex, ensure_ascii=False) + "\n")
+    drive_dir = Path("/content/drive/MyDrive/TMP")
+    if drive_dir.exists():
+        with open(drive_dir / "result.jsonl", "w", encoding="utf-8") as f:
+            for ex in all_examples:
+                f.write(json.dumps(ex, ensure_ascii=False) + "\n")
+        f.close()
+    else:
+        os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+            for ex in all_examples:
+                f.write(json.dumps(ex, ensure_ascii=False) + "\n")
 
     print(f"\nDone! Generated {len(all_examples)} examples → {OUTPUT_FILE}")
 
