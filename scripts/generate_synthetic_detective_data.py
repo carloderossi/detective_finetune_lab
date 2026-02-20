@@ -36,8 +36,8 @@ DATA_ROOT = "data/cleaned"
 OUTPUT_FILE = "data/train/detective_synthetic_v1.jsonl"
 
 # Recommended strong models for generation (pick one you have access to)
-# MODEL_NAME = "meta-llama/Llama-3.1-70B-Instruct"          # Access Requested again on 16th of Feb
-MODEL_NAME = "Qwen/Qwen2.5-72B-Instruct"
+MODEL_NAME = "meta-llama/Llama-3.1-70B-Instruct"          # Access Requested again on 16th of Feb
+# MODEL_NAME = "Qwen/Qwen2.5-72B-Instruct"
 # MODEL_NAME = "mistralai/Mixtral-8x22B-Instruct-v0.1"
 
 MAX_NEW_TOKENS = 1400
@@ -245,7 +245,7 @@ def main():
 def load_hf_token():
     config_path = "config.yaml"
 
-    """ # 1. Check if config.yaml exists
+    # 1. Check if config.yaml exists
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
             cfg = yaml.safe_load(f)
@@ -253,7 +253,7 @@ def load_hf_token():
         if token:
             return token
         else:
-            raise ValueError("config.yaml found but token missing under huggingface.token") """
+            raise ValueError("config.yaml found but token missing under huggingface.token") 
 
     # 2. Check environment variable
     token = os.getenv("HF_TOKEN")
