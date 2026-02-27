@@ -20,4 +20,9 @@ dependencies = [
     "tqdm>=4.66.4",
     "huggingface-hub[hf-xet]>=0.36.2",
     "seaborn>=0.13.2",
+    "psutil>=5.9.0",
+    "torch",
+    "tokenizers>=0.19.0",
+    "safetensors>=0.4.0",
+
 ]

@@ -1,3 +1,7 @@
+# Save this to /content/drive/MyDrive/scripts/train_scout_unsloth.py
+import os
+import torch
+import numpy as np
 from unsloth import FastLanguageModel
 from datasets import load_dataset
 from transformers import (
@@ -6,25 +10,33 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 from peft import LoraConfig
-import numpy as np
 
-MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
-# MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
+# --- GOOGLE DRIVE PATHS ---
+# Mounting is handled in the notebook; here we set the target paths
+DATA_FILE = "/content/drive/MyDrive/data/train/detective_finetune.jsonl"
+OUTPUT_DIR = "/content/drive/MyDrive/outputs/detective-qwen-sft"
 
-DATA_FILE = "data/train/detective_finetune.jsonl"
+# --- CONFIGURATION ---
+MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct" # 4 dry runs with 7B on T4, 100 steps takes ~20 mins, final LoRA ~1.5GB, total checkpoints ~2GB with 2 saved at a time. Qwen 14B is about 2x slower and larger, Llama-3.1-70B is about 4x slower and larger, Llama-4-Scout-17B is about 5-6x slower and larger but may give better results.
+# MODEL_NAME = "meta-llama/Llama-4-Scout-17B-16E-Instruct" # need to request access, better than Qwen 7B but slower and more expensive, estimated 5-6x slower and larger than Qwen 7B
+# This model is "distilled" from a massive reasoning model (DeepSeek-R1). It excels at the "thinking" process (Chain of Thought), which is perfect for investigative/detective data where the model needs to connect clues.
+# Unsloth Support: Unsloth has specialized kernels for Qwen-based architectures that make this run 2x faster on A100.
+# MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B" # final production grade
 
 MAX_LENGTH = 4096
-# Updated for a small dataset of 205 examples
-MAX_STEPS = 100      # This will take ~2-3 hours instead of 2 days
-GRAD_ACCUM = 8       # More updates for a small dataset
-NUM_EPOCHS = 3           # Pass through the data 3 times
+MAX_STEPS = 100      
+GRAD_ACCUM = 8       
+NUM_EPOCHS = 3           
 BASE_LR = 1.5e-4
 LOW_LR = 8e-5
 USE_LOW_LR = False
-
-LORA_DROPOUT = 0 # 0.05 or 0.1 can help regularize when training for many steps on a small dataset, but it also slows down Unsloth (non-deterministic). 
+LORA_DROPOUT = 0 
 
 learning_rate = LOW_LR if USE_LOW_LR else BASE_LR
+
+# Detect Hardware for A100 optimization
+major_v, _ = torch.cuda.get_device_capability()
+HAS_BF16 = major_v >= 8
 
 print(f"Loading model {MODEL_NAME} with Unsloth...")
 model, tokenizer = FastLanguageModel.from_pretrained(
@@ -38,18 +50,16 @@ tokenizer.pad_token = tokenizer.eos_token
 print(f"Pad token set to: {tokenizer.pad_token} (id={tokenizer.pad_token_id})")
 
 print("Creating PEFT model using Unsloth’s built‑in LoRA config helper...")
-
 model = FastLanguageModel.get_peft_model(
     model,
     r=32,
     lora_alpha=64,
-    lora_dropout=LORA_DROPOUT, # Unsloth falls back to slower kernels for LoRA layers. Adding dropout can help regularize and improve generalization when training for many steps on a small dataset.
+    lora_dropout=LORA_DROPOUT,
     target_modules=[
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
     ],
     bias="none",
-    # task_type="CAUSAL_LM",
 )
 print("PEFT model created with LoRA adapters.")
 
@@ -57,13 +67,24 @@ print(f"Loading dataset from {DATA_FILE}...")
 raw_dataset = load_dataset("json", data_files={"train": DATA_FILE})["train"]
 print(f"Total examples: {len(raw_dataset)}")
 
+# --- DataSet and Tokenizer ---
+
 def extract_text(example):
+    # Check if we have the metadata fields available
+    author = example.get("author", "Unknown Author").replace("_", " ").title()
+    book = example.get("book", "Unknown Book").replace("_", " ").title()
+    chapter = example.get("chapter", "Unknown Chapter").replace("_", " ").title()
+    
+    # Define a header to give the LLM context
+    header = f"### Author: {author}\n### Source: {book} - {chapter}\n\n"
+    
     if "text" in example:
-        return example["text"]
+        return header + example["text"]
     if "output" in example:
-        return example["output"]
+        return header + example["output"]
     if "instruction" in example and "output" in example:
-        return example["instruction"] + "\n\n" + example["output"]
+        return header + example["instruction"] + "\n\n" + example["output"]
+    
     raise ValueError("No usable text field found.")
 
 dataset = raw_dataset.map(lambda x: {"text": extract_text(x)})
@@ -76,7 +97,7 @@ eval_ds = dataset["test"]
 def tokenize(batch):
     return tokenizer(
         batch["text"],
-        truncation=False,      # no truncation here; we’ll pack later
+        truncation=False,
         add_special_tokens=True,
     )
 
@@ -84,10 +105,7 @@ print("Tokenizing...")
 train_tok = train_ds.map(tokenize, batched=True, remove_columns=["text"])
 eval_tok  = eval_ds.map(tokenize,  batched=True, remove_columns=["text"])
 
-# --- sequence packing: HuggingFace expects each batch to return a flat list of samples, not a nested structure.
-# we concatenate all tokenized sequences and then split into chunks of MAX_LENGTH, creating new samples on the fly.
 def group_texts(examples):
-    # Concatenate all tokens
     concatenated = sum(examples["input_ids"], [])
     total_length = (len(concatenated) // MAX_LENGTH) * MAX_LENGTH
 
@@ -98,26 +116,21 @@ def group_texts(examples):
         concatenated[i : i + MAX_LENGTH]
         for i in range(0, total_length, MAX_LENGTH)
     ]
-
     attention_mask = [
         [1] * MAX_LENGTH for _ in range(len(input_ids))
     ]
-
     return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
     }
 
 print("Packing sequences...")
-# HuggingFace  expects each column returned by  to have the same number of rows as the input batch. 
-# Since we are concatenating and re-splitting, we set batch_size=None to process the entire dataset at once, and remove the original columns.
 train_tok = train_tok.map(
     group_texts,
     batched=True,
     batch_size=None,
     remove_columns=train_tok.column_names,
 )
-
 eval_tok = eval_tok.map(
     group_texts,
     batched=True,
@@ -128,82 +141,33 @@ eval_tok = eval_tok.map(
 print(f"Packed train samples: {len(train_tok)}")
 print(f"Packed eval samples:  {len(eval_tok)}")
 
+# --- UPDATED TRAINING ARGUMENTS FOR DRIVE & RESUME ---
 training_args = TrainingArguments(
-    output_dir="./detective-qwen-sft",
-
-    # --- BATCHING & GRADIENT QUALITY ---
+    output_dir=OUTPUT_DIR,
     per_device_train_batch_size=1,
-    gradient_accumulation_steps=GRAD_ACCUM,   # 8
-    max_steps=MAX_STEPS,                      # 100
-    num_train_epochs=NUM_EPOCHS,              # 3
-
-    # --- LEARNING ---
-    learning_rate=BASE_LR if not USE_LOW_LR else LOW_LR,
+    gradient_accumulation_steps=GRAD_ACCUM,
+    max_steps=MAX_STEPS,
+    num_train_epochs=NUM_EPOCHS,
+    learning_rate=learning_rate,
     warmup_ratio=0.05,
     lr_scheduler_type="cosine",
     weight_decay=0.01,
-
-    # --- EVALUATION (LIGHTWEIGHT & SAFE) ---
-    eval_strategy="epoch",                    # evaluate once per epoch
-    per_device_eval_batch_size=1,             # prevents OOM
-
-    # --- PRECISION ---
-    fp16=True,                                # your version supports this
-    bf16=False,                               # ensure disabled on Colab T4
-
-    # --- SAVING ---
-    save_strategy="epoch",
-    save_total_limit=2,
-
-    # --- LOGGING ---
     logging_steps=5,
     report_to="none",
-
-    # --- OPTIMIZER ---
     optim="paged_adamw_8bit",
+
+    # Precision
+    fp16 = not HAS_BF16,
+    bf16 = HAS_BF16,
+
+    # 15GB Drive Protection & Auto-Resume Logic
+    eval_strategy="steps",
+    eval_steps=20,
+    save_strategy="steps",
+    save_steps=20,           # Save every 20 steps to handle Colab timeouts
+    save_total_limit=2,      # CRITICAL: Keep only 2 checkpoints to fit in 15GB Drive
+    load_best_model_at_end=False,
 )
-
-# training_args = TrainingArguments(
-#     output_dir="./detective-qwen-sft",
-#     per_device_train_batch_size=1,
-#     gradient_accumulation_steps=GRAD_ACCUM,
-#     learning_rate=learning_rate,
-    
-#     # --- EPOCH-BASED SETTINGS ---
-#     num_train_epochs=NUM_EPOCHS,      # Use this instead of max_steps
-#     eval_strategy="epoch",            # Evaluate at the end of every epoch
-#     save_strategy="epoch",            # Save a checkpoint at the end of every epoch
-#     # ----------------------------
-
-#     warmup_ratio=0.05,
-#     lr_scheduler_type="cosine",
-#     logging_steps=5,                  # Log more frequently since total steps are low
-#     save_total_limit=2,
-#     fp16=True,
-#     optim="paged_adamw_8bit",
-#     report_to="none",
-#     weight_decay=0.01,
-# )
-
-# training_args = TrainingArguments(
-#     output_dir="./detective-qwen-sft",
-#     per_device_train_batch_size=1,
-#     gradient_accumulation_steps=GRAD_ACCUM,
-#     learning_rate=learning_rate,
-#     max_steps=MAX_STEPS,
-#     warmup_ratio=0.05,
-#     lr_scheduler_type="cosine",
-#     logging_steps=25,
-#     eval_strategy="steps", # Use this! Delete 'evaluation_strategy' if it's there
-#     eval_steps=20,
-#     save_steps=20,
-#     #save_total_limit=4,
-#     fp16=True,
-#     optim="paged_adamw_8bit", # Crucial for fitting the 7B model on a 16GB T4.
-#     report_to="none",
-#     weight_decay=0.01, # Adding a small weight decay helps prevent the model from "forgetting" its base knowledge during long runs
-#     save_total_limit=2 # During a long run, generating checkpoints every 250 steps will quickly fill up your disk. Limit this to the last 2 best checkpoints
-# )
 
 data_collator = DataCollatorForLanguageModeling(
     tokenizer=tokenizer,
@@ -211,9 +175,7 @@ data_collator = DataCollatorForLanguageModeling(
 )
 
 def compute_metrics(eval_pred):
-    # simple perplexity
     logits, labels = eval_pred
-    # shift for causal LM
     shift_logits = logits[..., :-1, :]
     shift_labels = labels[..., 1:]
     loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100)
@@ -231,11 +193,14 @@ trainer = Trainer(
     train_dataset=train_tok,
     eval_dataset=eval_tok,
     data_collator=data_collator,
-    # compute_metrics=compute_metrics,  # enable if you want PPL during eval
+    compute_metrics=compute_metrics,
 )
 
-trainer.train()
+# Check if a checkpoint exists in Drive to resume from
+resume_from_checkpoint = True if os.path.exists(OUTPUT_DIR) and any("checkpoint" in d for d in os.listdir(OUTPUT_DIR)) else None
+trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
-print("Saving model...")
-model.save_pretrained("./detective-qwen-sft")
-tokenizer.save_pretrained("./detective-qwen-sft")
+print("Saving final model adapters to Drive...")
+model.save_pretrained(OUTPUT_DIR)
+tokenizer.save_pretrained(OUTPUT_DIR)
+print(f"✅ Training complete. Model and adapters saved to {OUTPUT_DIR}")
