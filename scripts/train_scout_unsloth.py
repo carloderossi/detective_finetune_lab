@@ -39,7 +39,7 @@ MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct" # 4 dry runs with 7B on T4, 100 steps ta
 
 # Change from 4096 to 2048 if using T4 to avoid OOM, A100 can handle 4096 but 2048 is safer for batch size and gradient accumulation
 MAX_LENGTH = 2048
-MAX_STEPS = 100      
+MAX_STEPS = 120 #100 : adding 20 more training steps after training finished and starting eval     
 GRAD_ACCUM = 4  # 8 is ideal for 16GB GPUs but may cause OOM on T4, 4 is safer and still gives good results with LoRA       
 NUM_EPOCHS = 3           
 BASE_LR = 1.5e-4
@@ -173,15 +173,16 @@ training_args = TrainingArguments(
     bf16 = HAS_BF16,
 
     # 15GB Drive Protection & Auto-Resume Logic
-    # eval_strategy="steps", # set eval_strategy="no" temporarily (skip eval), train to 100, then re-enable eval later on a machine with more VRAM.
-    eval_strategy="no",
-    # eval_steps=20,
+     eval_strategy="steps", 
+    # set eval_strategy="no" temporarily (skip eval), train to 100, then re-enable eval later on a machine with more VRAM.
+    # eval_strategy="no",
+    eval_steps=20,
     save_strategy="steps",
     save_steps=20,           # Save every 20 steps to handle Colab timeouts
     save_total_limit=2,      # CRITICAL: Keep only 2 checkpoints to fit in 15GB Drive
     load_best_model_at_end=False,
     per_device_eval_batch_size=1,          # ← CRITICAL: force eval micro-batch=1 (default may be higher)
-    eval_accumulation_steps=4,        # accumulate eval over more micro-steps → lower peak VRAM
+    eval_accumulation_steps=8,        # accumulate eval over more micro-steps → lower peak VRAM. either 4 or 8 should work on T4, 16 is ideal for A100 if eval batch size is 1
     fp16_full_eval=True,                   # Use FP16 for eval → halves eval memory (~50% savings)
     # OR if still tight: bf16_full_eval=True (but T4 doesn't support bf16 well → stick to fp16)
     gradient_checkpointing=True,           # Already enabled via model, but ensure
