@@ -2,6 +2,12 @@
 import os
 import torch
 import numpy as np
+
+# FIX: Disables the broken Dynamo compiler in Torch 2.6 that causes the Traceback
+os.environ["TORCHDYNAMO_DISABLE"] = "1"
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True" # Enable expandable segments to reduce fragmentation and OOMs on large models with LoRA adapters, especially on 16GB GPUs. This allows PyTorch to better manage memory when loading and training large models with adapters, which can help prevent out-of-memory errors during training.
+
 from unsloth import FastLanguageModel
 from datasets import load_dataset
 from transformers import (
@@ -10,6 +16,12 @@ from transformers import (
     DataCollatorForLanguageModeling,
 )
 from peft import LoraConfig
+from unsloth import FastLanguageModel
+
+
+# FIX: Disable Torch Dynamo to prevent the __import__ graph break error
+os.environ["TORCH_COMPILE_BACKEND"] = "eager"
+torch._dynamo.config.suppress_errors = True
 
 # --- GOOGLE DRIVE PATHS ---
 # Mounting is handled in the notebook; here we set the target paths
@@ -22,10 +34,13 @@ MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct" # 4 dry runs with 7B on T4, 100 steps ta
 # This model is "distilled" from a massive reasoning model (DeepSeek-R1). It excels at the "thinking" process (Chain of Thought), which is perfect for investigative/detective data where the model needs to connect clues.
 # Unsloth Support: Unsloth has specialized kernels for Qwen-based architectures that make this run 2x faster on A100.
 # MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B" # final production grade
+# or even better for speed/memory:
+# MODEL_NAME = "unsloth/DeepSeek-R1-Distill-Qwen-32B-bnb-4bit"   # Unsloth's pre-quantized 4-bit version (recommended)
 
-MAX_LENGTH = 4096
+# Change from 4096 to 2048 if using T4 to avoid OOM, A100 can handle 4096 but 2048 is safer for batch size and gradient accumulation
+MAX_LENGTH = 2048
 MAX_STEPS = 100      
-GRAD_ACCUM = 8       
+GRAD_ACCUM = 4  # 8 is ideal for 16GB GPUs but may cause OOM on T4, 4 is safer and still gives good results with LoRA       
 NUM_EPOCHS = 3           
 BASE_LR = 1.5e-4
 LOW_LR = 8e-5
@@ -52,8 +67,8 @@ print(f"Pad token set to: {tokenizer.pad_token} (id={tokenizer.pad_token_id})")
 print("Creating PEFT model using Unsloth’s built‑in LoRA config helper...")
 model = FastLanguageModel.get_peft_model(
     model,
-    r=32,
-    lora_alpha=64,
+    r=16, # Reduced from 32
+    lora_alpha=32, # Adjusted to match r
     lora_dropout=LORA_DROPOUT,
     target_modules=[
         "q_proj", "k_proj", "v_proj", "o_proj",
@@ -70,22 +85,19 @@ print(f"Total examples: {len(raw_dataset)}")
 # --- DataSet and Tokenizer ---
 
 def extract_text(example):
-    # Check if we have the metadata fields available
-    author = example.get("author", "Unknown Author").replace("_", " ").title()
-    book = example.get("book", "Unknown Book").replace("_", " ").title()
-    chapter = example.get("chapter", "Unknown Chapter").replace("_", " ").title()
+    # Format metadata into a readable string
+    author = example.get("author", "Unknown").replace("_", " ").title()
+    book = example.get("book", "Unknown").replace("_", " ").title()
     
-    # Define a header to give the LLM context
-    header = f"### Author: {author}\n### Source: {book} - {chapter}\n\n"
+    header = f"### Author: {author}\n### Source: {book}\n\n"
     
+    # Priority check for fields
     if "text" in example:
         return header + example["text"]
     if "output" in example:
         return header + example["output"]
-    if "instruction" in example and "output" in example:
-        return header + example["instruction"] + "\n\n" + example["output"]
     
-    raise ValueError("No usable text field found.")
+    raise ValueError(f"Found sample with no usable text. Keys: {example.keys()}")
 
 dataset = raw_dataset.map(lambda x: {"text": extract_text(x)})
 
@@ -154,19 +166,25 @@ training_args = TrainingArguments(
     weight_decay=0.01,
     logging_steps=5,
     report_to="none",
-    optim="paged_adamw_8bit",
+    optim="paged_adamw_8bit", # Good choice, keeps optimizer low memory
 
     # Precision
     fp16 = not HAS_BF16,
     bf16 = HAS_BF16,
 
     # 15GB Drive Protection & Auto-Resume Logic
-    eval_strategy="steps",
+    eval_strategy="steps", # set eval_strategy="no" temporarily (skip eval), train to 100, then re-enable eval later on a machine with more VRAM.
     eval_steps=20,
     save_strategy="steps",
     save_steps=20,           # Save every 20 steps to handle Colab timeouts
     save_total_limit=2,      # CRITICAL: Keep only 2 checkpoints to fit in 15GB Drive
     load_best_model_at_end=False,
+    per_device_eval_batch_size=1,          # ← CRITICAL: force eval micro-batch=1 (default may be higher)
+    eval_accumulation_steps=1,             # Accumulate eval gradients if needed (but usually not)
+    fp16_full_eval=True,                   # Use FP16 for eval → halves eval memory (~50% savings)
+    # OR if still tight: bf16_full_eval=True (but T4 doesn't support bf16 well → stick to fp16)
+    gradient_checkpointing=True,           # Already enabled via model, but ensure
+    
 )
 
 data_collator = DataCollatorForLanguageModeling(
