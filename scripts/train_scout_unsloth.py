@@ -17,7 +17,7 @@ from transformers import (
 )
 from peft import LoraConfig
 from unsloth import FastLanguageModel
-
+from unsloth import unsloth_train
 
 # FIX: Disable Torch Dynamo to prevent the __import__ graph break error
 os.environ["TORCH_COMPILE_BACKEND"] = "eager"
@@ -173,14 +173,15 @@ training_args = TrainingArguments(
     bf16 = HAS_BF16,
 
     # 15GB Drive Protection & Auto-Resume Logic
-    eval_strategy="steps", # set eval_strategy="no" temporarily (skip eval), train to 100, then re-enable eval later on a machine with more VRAM.
-    eval_steps=20,
+    # eval_strategy="steps", # set eval_strategy="no" temporarily (skip eval), train to 100, then re-enable eval later on a machine with more VRAM.
+    eval_strategy="no",
+    # eval_steps=20,
     save_strategy="steps",
     save_steps=20,           # Save every 20 steps to handle Colab timeouts
     save_total_limit=2,      # CRITICAL: Keep only 2 checkpoints to fit in 15GB Drive
     load_best_model_at_end=False,
     per_device_eval_batch_size=1,          # ← CRITICAL: force eval micro-batch=1 (default may be higher)
-    eval_accumulation_steps=1,             # Accumulate eval gradients if needed (but usually not)
+    eval_accumulation_steps=4,        # accumulate eval over more micro-steps → lower peak VRAM
     fp16_full_eval=True,                   # Use FP16 for eval → halves eval memory (~50% savings)
     # OR if still tight: bf16_full_eval=True (but T4 doesn't support bf16 well → stick to fp16)
     gradient_checkpointing=True,           # Already enabled via model, but ensure
@@ -216,7 +217,11 @@ trainer = Trainer(
 
 # Check if a checkpoint exists in Drive to resume from
 resume_from_checkpoint = True if os.path.exists(OUTPUT_DIR) and any("checkpoint" in d for d in os.listdir(OUTPUT_DIR)) else None
-trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+# trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+unsloth_train(
+    trainer,
+    resume_from_checkpoint=resume_from_checkpoint
+)
 
 print("Saving final model adapters to Drive...")
 model.save_pretrained(OUTPUT_DIR)
