@@ -6,3 +6,5 @@ config.yaml
 SomeIMPROVEMENTS.md
 /training
 /logs
+/models
+/outputs

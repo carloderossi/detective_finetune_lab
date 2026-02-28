@@ -3,10 +3,8 @@ import os
 import torch
 
 model_dir = "/content/drive/MyDrive/outputs/detective-qwen-sft"   
-merged_dir = "/content/merged-detective-qwen"          # temporary folder in Colab RAM/disk
 save_dir   = "/content/drive/MyDrive/models/detective-qwen-gguf"
 
-os.makedirs(merged_dir, exist_ok=True)
 os.makedirs(save_dir, exist_ok=True)
 
 from datetime import datetime
@@ -33,12 +31,12 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 print("Merging LoRA into base model...")
 model = model.merge_and_unload()
 
-print("Saving merged full model to temporary folder...")
-model.save_pretrained(merged_dir, safe_serialization=True)
-tokenizer.save_pretrained(merged_dir)
+print("Saving merged full model...")
+model.save_pretrained(save_dir, safe_serialization=True)
+tokenizer.save_pretrained(save_dir)
 
 print("Saving to GGUF ...")
-# for q in ["q4_k_m", "q5_k_m", "q6_k"]:
+# for q in ["q4_k_m", "q5_k_m", "q6_k"]:  # Uncomment if you want multiple quants
 #     print(f"\nQuantizing to {q} ...")
 #     model.save_pretrained_gguf(
 #         save_directory   = save_dir,
