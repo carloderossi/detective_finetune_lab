@@ -1,0 +1,68 @@
+# =============================================================================
+# config_a100_32b_production.yaml
+# A100 (40GB) — DeepSeek-R1-Distill-Qwen-32B, production fine-tune, evals ON.
+# DeepSeek-R1 distilled from a massive reasoning model — best Chain-of-Thought.
+# Unsloth has optimised kernels for Qwen-based architectures (2x faster on A100).
+# Estimated time: ~3-4 hrs on A100-40GB
+# =============================================================================
+
+config_name: "a100_32b_production"
+description: "A100 40GB | DeepSeek-R1-Qwen-32B | production run | evals ON | resume"
+gpu_target: "A100-40GB"
+
+env:
+  disable_torchdynamo: true
+  hf_hub_enable_transfer: true
+  pytorch_alloc_conf: "expandable_segments:True"
+  suppress_dynamo_errors: true
+
+paths:
+  data_file:  "/content/drive/MyDrive/data/train/detective_finetune.jsonl"
+  output_dir: "/content/drive/MyDrive/outputs/detective-deepseek32b-sft"
+
+model:
+  # Full bf16 weights — best quality, requires ~40GB VRAM with 4bit quant
+  name:         "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+  load_in_4bit: true
+
+lora:
+  r:            64     # A100 can support r=64 for a 32B model
+  lora_alpha:   128
+  lora_dropout: 0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  bias: "none"
+
+training:
+  max_length:                 4096
+  max_steps:                  200    # Full production run
+  grad_accum:                 8
+  num_epochs:                 3
+  base_lr:                    1.0e-4 # Conservative LR for 32B stability
+  low_lr:                     5.0e-5
+  use_low_lr:                 false
+  warmup_ratio:               0.05
+  lr_scheduler_type:          "cosine"
+  weight_decay:               0.01
+  per_device_train_batch_size: 1
+  logging_steps:              5
+  optim:                      "paged_adamw_8bit"
+  gradient_checkpointing:     true
+  use_unsloth_train:          true   # Unsloth is 2x faster for Qwen arch on A100
+
+eval:
+  enabled:                    true
+  eval_steps:                 20
+  per_device_eval_batch_size: 1
+  eval_accumulation_steps:    16     # 16 gives low peak eval VRAM on A100
+  fp16_full_eval:             false  # A100 uses bf16 natively (auto-detected)
+
+checkpoint:
+  save_steps:            20
+  save_total_limit:      3           # A100 usually has more Drive quota headroom
+  load_best_model_at_end: false
+  resume:                true
+
+dataset:
+  test_size:              0.05
+  seed:                   42
+  include_chapter_in_header: true

@@ -1,0 +1,69 @@
+# =============================================================================
+# config_a100_80gb_fullblown.yaml
+# A100 (80GB) — DeepSeek-R1-Qwen-32B pre-quantized 4bit (Unsloth), max settings.
+# The full-blown configuration: largest model, max context, max LoRA rank,
+# larger batch, more steps, full evals, chapter-aware headers.
+# Unsloth's pre-quantized 4bit version loads faster and is slightly more stable.
+# Estimated time: ~4-6 hrs on A100-80GB
+# =============================================================================
+
+config_name: "a100_80gb_fullblown"
+description: "A100 80GB | DeepSeek-R1-32B 4bit (Unsloth) | max settings | full evals | resume"
+gpu_target: "A100-80GB"
+
+env:
+  disable_torchdynamo: true
+  hf_hub_enable_transfer: true
+  pytorch_alloc_conf: "expandable_segments:True"
+  suppress_dynamo_errors: true
+
+paths:
+  data_file:  "/content/drive/MyDrive/data/train/detective_finetune.jsonl"
+  output_dir: "/content/drive/MyDrive/outputs/detective-deepseek32b-4bit-sft"
+
+model:
+  # Unsloth's pre-quantized 4-bit version — faster to load, recommended over raw weights
+  name:         "unsloth/DeepSeek-R1-Distill-Qwen-32B-bnb-4bit"
+  load_in_4bit: true
+
+lora:
+  r:            128    # Maximum expressiveness — 80GB can absorb it
+  lora_alpha:   256
+  lora_dropout: 0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  bias: "none"
+
+training:
+  max_length:                 8192   # 80GB allows full 8K context window
+  max_steps:                  300    # Longest run — full fine-tune
+  grad_accum:                 16     # Large accumulation → effective batch = 16
+  num_epochs:                 5      # More epochs for thorough learning
+  base_lr:                    8.0e-5 # Lower LR for very large model + high r
+  low_lr:                     4.0e-5
+  use_low_lr:                 false
+  warmup_ratio:               0.05
+  lr_scheduler_type:          "cosine"
+  weight_decay:               0.01
+  per_device_train_batch_size: 2     # 80GB can handle batch=2 even at 8K context
+  logging_steps:              5
+  optim:                      "paged_adamw_8bit"
+  gradient_checkpointing:     true
+  use_unsloth_train:          true
+
+eval:
+  enabled:                    true
+  eval_steps:                 20
+  per_device_eval_batch_size: 2      # 80GB can eval with batch=2
+  eval_accumulation_steps:    16
+  fp16_full_eval:             false  # A100 = bf16 natively (auto-detected)
+
+checkpoint:
+  save_steps:            20
+  save_total_limit:      5           # Keep more checkpoints — 80GB run is valuable
+  load_best_model_at_end: false
+  resume:                true
+
+dataset:
+  test_size:              0.05
+  seed:                   42
+  include_chapter_in_header: true    # Full metadata in headers

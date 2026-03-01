@@ -1,0 +1,66 @@
+# =============================================================================
+# config_a10g_14b_train100.yaml
+# A10G (24GB) — Qwen2.5-14B mid-size model, 100 steps, evals ON, resume.
+# A10G has 24GB VRAM — can handle 14B at 4bit + longer context + larger batch.
+# Estimated time: ~40-50 min on A10G with Qwen2.5-14B
+# =============================================================================
+
+config_name: "a10g_14b_train100"
+description: "A10G 24GB | Qwen2.5-14B | 100 steps | evals ON | auto-resume"
+gpu_target: "A10G"
+
+env:
+  disable_torchdynamo: true
+  hf_hub_enable_transfer: true
+  pytorch_alloc_conf: "expandable_segments:True"
+  suppress_dynamo_errors: true
+
+paths:
+  data_file:  "/content/drive/MyDrive/data/train/detective_finetune.jsonl"
+  output_dir: "/content/drive/MyDrive/outputs/detective-qwen14b-sft"
+
+model:
+  name:         "Qwen/Qwen2.5-14B-Instruct"
+  load_in_4bit: true
+
+lora:
+  r:            32     # A10G can handle r=32 comfortably
+  lora_alpha:   64
+  lora_dropout: 0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  bias: "none"
+
+training:
+  max_length:                 4096   # A10G can handle full 4096 context
+  max_steps:                  100
+  grad_accum:                 8      # 8 is ideal for 24GB with 14B + LoRA
+  num_epochs:                 3
+  base_lr:                    1.5e-4
+  low_lr:                     8.0e-5
+  use_low_lr:                 false
+  warmup_ratio:               0.05
+  lr_scheduler_type:          "cosine"
+  weight_decay:               0.01
+  per_device_train_batch_size: 1
+  logging_steps:              5
+  optim:                      "paged_adamw_8bit"
+  gradient_checkpointing:     true
+  use_unsloth_train:          true
+
+eval:
+  enabled:                    true
+  eval_steps:                 20
+  per_device_eval_batch_size: 1
+  eval_accumulation_steps:    8
+  fp16_full_eval:             false  # A10G supports bf16 natively (auto-detected)
+
+checkpoint:
+  save_steps:            20
+  save_total_limit:      2
+  load_best_model_at_end: false
+  resume:                true
+
+dataset:
+  test_size:              0.05
+  seed:                   42
+  include_chapter_in_header: true   # Enable chapter metadata for richer context

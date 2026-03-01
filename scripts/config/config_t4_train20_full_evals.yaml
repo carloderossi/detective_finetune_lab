@@ -1,0 +1,66 @@
+# =============================================================================
+# config_t4_train20_full_evals.yaml
+# T4 (16GB) — 20 training steps + FULL evals, auto-resume.
+# Use this to validate checkpoint quality after a longer no-eval run.
+# Typical use: run config_t4_train100_no_evals first, then this one to eval.
+# =============================================================================
+
+config_name: "t4_train20_full_evals"
+description: "T4 | Qwen2.5-7B | 20 steps | FULL evals | auto-resume"
+gpu_target: "T4"
+
+env:
+  disable_torchdynamo: true
+  hf_hub_enable_transfer: true
+  pytorch_alloc_conf: "expandable_segments:True"
+  suppress_dynamo_errors: true
+
+paths:
+  data_file:  "/content/drive/MyDrive/data/train/detective_finetune.jsonl"
+  output_dir: "/content/drive/MyDrive/outputs/detective-qwen-sft"
+
+model:
+  name:         "Qwen/Qwen2.5-7B-Instruct"
+  load_in_4bit: true
+
+lora:
+  r:            16
+  lora_alpha:   32
+  lora_dropout: 0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  bias: "none"
+
+training:
+  max_length:                 2048
+  max_steps:                  20     # Just 20 steps — mainly here to unlock the eval run
+  grad_accum:                 4
+  num_epochs:                 3
+  base_lr:                    1.5e-4
+  low_lr:                     8.0e-5
+  use_low_lr:                 false
+  warmup_ratio:               0.05
+  lr_scheduler_type:          "cosine"
+  weight_decay:               0.01
+  per_device_train_batch_size: 1
+  logging_steps:              5
+  optim:                      "paged_adamw_8bit"
+  gradient_checkpointing:     true
+  use_unsloth_train:          true
+
+eval:
+  enabled:                      true
+  eval_steps:                   20   # Eval at step 20 (end of run)
+  per_device_eval_batch_size:   1    # CRITICAL: keep at 1 to avoid OOM on T4
+  eval_accumulation_steps:      8    # Accumulate over 8 micro-steps → lower peak VRAM
+  fp16_full_eval:               true # FP16 eval halves eval memory on T4
+
+checkpoint:
+  save_steps:            20
+  save_total_limit:      2
+  load_best_model_at_end: false
+  resume:                true
+
+dataset:
+  test_size:              0.05
+  seed:                   42
+  include_chapter_in_header: false

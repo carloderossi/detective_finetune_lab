@@ -1,0 +1,68 @@
+# =============================================================================
+# config_a10g_17b_scout_full.yaml
+# A10G (24GB) — Llama-4-Scout-17B-16E, full training run, evals ON, resume.
+# Scout is ~5-6x slower than Qwen2.5-7B and requires HF access approval.
+# This is a serious production-grade run pushing A10G to its comfortable limit.
+# Estimated time: ~2-3 hrs on A10G with Scout-17B
+# =============================================================================
+
+config_name: "a10g_17b_scout_full"
+description: "A10G 24GB | Llama-4-Scout-17B | full run | evals ON | auto-resume"
+gpu_target: "A10G"
+
+env:
+  disable_torchdynamo: true
+  hf_hub_enable_transfer: true
+  pytorch_alloc_conf: "expandable_segments:True"
+  suppress_dynamo_errors: true
+
+paths:
+  data_file:  "/content/drive/MyDrive/data/train/detective_finetune.jsonl"
+  output_dir: "/content/drive/MyDrive/outputs/detective-scout17b-sft"
+
+model:
+  # NOTE: requires HuggingFace access request at meta-llama/Llama-4-Scout-17B-16E-Instruct
+  name:         "meta-llama/Llama-4-Scout-17B-16E-Instruct"
+  load_in_4bit: true
+
+lora:
+  r:            32
+  lora_alpha:   64
+  lora_dropout: 0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  bias: "none"
+
+training:
+  max_length:                 4096
+  max_steps:                  120    # Full run: 100 base + 20 extension steps
+  grad_accum:                 8
+  num_epochs:                 3
+  base_lr:                    1.2e-4 # Slightly lower LR for large model stability
+  low_lr:                     6.0e-5
+  use_low_lr:                 false
+  warmup_ratio:               0.05
+  lr_scheduler_type:          "cosine"
+  weight_decay:               0.01
+  per_device_train_batch_size: 1
+  logging_steps:              5
+  optim:                      "paged_adamw_8bit"
+  gradient_checkpointing:     true
+  use_unsloth_train:          true
+
+eval:
+  enabled:                    true
+  eval_steps:                 20
+  per_device_eval_batch_size: 1
+  eval_accumulation_steps:    8
+  fp16_full_eval:             false  # bf16 auto-detected on A10G
+
+checkpoint:
+  save_steps:            20
+  save_total_limit:      2           # Keep only 2 checkpoints — Scout ckpts are large
+  load_best_model_at_end: false
+  resume:                true
+
+dataset:
+  test_size:              0.05
+  seed:                   42
+  include_chapter_in_header: true

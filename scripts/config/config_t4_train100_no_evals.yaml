@@ -1,0 +1,62 @@
+# =============================================================================
+# config_t4_train100_no_evals.yaml
+# T4 (16GB) — 100 training steps, NO evals, auto-resume.
+# Use this for fast iterative training runs where eval VRAM cost is too high.
+# Estimated time: ~20 min on T4 with Qwen2.5-7B
+# =============================================================================
+
+config_name: "t4_train100_no_evals"
+description: "T4 | Qwen2.5-7B | 100 steps | evals OFF | auto-resume"
+gpu_target: "T4"
+
+env:
+  disable_torchdynamo: true        # Fix for Torch 2.6 __import__ graph break error
+  hf_hub_enable_transfer: true
+  pytorch_alloc_conf: "expandable_segments:True"  # Reduces OOM fragmentation on 16GB
+  suppress_dynamo_errors: true
+
+paths:
+  data_file:  "/content/drive/MyDrive/data/train/detective_finetune.jsonl"
+  output_dir: "/content/drive/MyDrive/outputs/detective-qwen-sft"
+
+model:
+  name:         "Qwen/Qwen2.5-7B-Instruct"
+  load_in_4bit: true
+
+lora:
+  r:            16      # Conservative r for T4 memory
+  lora_alpha:   32
+  lora_dropout: 0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  bias: "none"
+
+training:
+  max_length:                 2048   # 2048 safer than 4096 on T4
+  max_steps:                  100
+  grad_accum:                 4      # 4 safer than 8 on T4 with LoRA
+  num_epochs:                 3
+  base_lr:                    1.5e-4
+  low_lr:                     8.0e-5
+  use_low_lr:                 false
+  warmup_ratio:               0.05
+  lr_scheduler_type:          "cosine"
+  weight_decay:               0.01
+  per_device_train_batch_size: 1
+  logging_steps:              5
+  optim:                      "paged_adamw_8bit"
+  gradient_checkpointing:     true
+  use_unsloth_train:          true   # Use Unsloth's optimised kernel
+
+eval:
+  enabled: false                     # Evals OFF — saves ~3GB VRAM on T4
+
+checkpoint:
+  save_steps:            20          # Save every 20 steps (handles Colab disconnects)
+  save_total_limit:      2           # Max 2 checkpoints — fits in 15GB Drive quota
+  load_best_model_at_end: false
+  resume:                true        # Auto-resume from last checkpoint if present
+
+dataset:
+  test_size:              0.05
+  seed:                   42
+  include_chapter_in_header: false
